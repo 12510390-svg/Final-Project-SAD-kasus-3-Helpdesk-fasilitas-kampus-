@@ -1,0 +1,25 @@
+/* Small placement and motion refinements for the login and report workspace. */
+@media(min-width:900px){
+  .back-to-landing{top:clamp(44px,6vw,82px);left:clamp(240px,22vw,390px);right:auto;border-color:#91afb7;color:#496a78;background:#f8fbf9d9;box-shadow:0 6px 14px #34535f16}
+  .back-to-landing:hover{background:#527d8f;color:#fff}
+}
+
+@media(prefers-reduced-motion:no-preference){
+  .hero{animation:fk-dashboard-hero .65s cubic-bezier(.2,.8,.2,1) both}
+  .metric{animation:fk-dashboard-rise .52s cubic-bezier(.2,.8,.2,1) both}
+  .metric:nth-child(2){animation-delay:.08s}
+  .metric:nth-child(3){animation-delay:.16s}
+  .report-card,.task{animation:fk-dashboard-rise .5s cubic-bezier(.2,.8,.2,1) both}
+  .report-card:nth-child(2),.task:nth-child(2){animation-delay:.06s}
+  .report-card:nth-child(3),.task:nth-child(3){animation-delay:.12s}
+  .report-card:active,.task:active,.metric:active{transform:translateY(-1px) scale(.985)}
+  .report-card .status{transition:transform .22s ease,background .22s ease}
+  .report-card:hover .status{transform:translateX(-3px)}
+  .hero .primary,.primary,.secondary{transition:transform .2s ease,box-shadow .2s ease,background .2s ease}
+  .hero .primary:hover,.primary:hover,.secondary:hover{transform:translateY(-3px)}
+  .profile .avatar{animation:fk-avatar-pulse 3s ease-in-out infinite}
+}
+
+@keyframes fk-dashboard-hero{from{opacity:0;transform:translateY(17px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes fk-dashboard-rise{from{opacity:0;transform:translateY(15px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fk-avatar-pulse{50%{box-shadow:0 0 0 6px #9cc9cf20}}

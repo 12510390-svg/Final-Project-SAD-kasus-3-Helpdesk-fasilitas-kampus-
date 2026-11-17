@@ -1,0 +1,39 @@
+/* A single clean navigation group and table-led dashboard composition. */
+@media(min-width:701px){
+  .helpdesk-app{width:calc(100% - 32px);min-height:calc(100svh - 32px);margin:16px auto;border-radius:26px}
+  .side-panel{padding:27px 16px 19px}
+  .dashboard-nav{gap:0;padding:6px;border:1px solid #dbe6e4;border-radius:15px;background:#f7faf9}
+  .dashboard-nav a:not(.active){display:none}
+  .dashboard-nav a{border-radius:9px;padding:10px 9px}
+  .signed-role{margin-top:14px;padding:11px 7px;border:0;border-top:1px solid #d5e1df;border-radius:0;background:transparent}
+  .signed-role p{margin-bottom:8px}
+  .dashboard-logout{margin-top:auto}
+  .workspace{min-height:calc(100svh - 32px)}
+  .activity-rail{min-height:calc(100svh - 32px)}
+  .hero{display:grid;grid-template-columns:minmax(0,1fr) auto;min-height:126px;padding:0;border:1px solid #d7e5e3;border-radius:17px;background:#f4f8f7;box-shadow:0 8px 18px #40636c0d}
+  .hero:before,.hero:after{display:none}
+  .hero>div{padding:23px 28px}
+  .hero .eyebrow{color:#6e97a6}
+  .hero h2{margin-top:5px;color:#38545e;font-size:25px}
+  .hero p:not(.eyebrow){color:#809398}
+  .hero .primary{align-self:center;margin:20px;border:1px solid #b8d1d2;background:#6d9eae;color:#fff;box-shadow:none}
+  .hero .primary:hover{background:#5a8b9d}
+  .metric-row{margin:14px 0 28px}
+  .report-list{gap:0;overflow:hidden;border:1px solid #dfe9e7;border-radius:17px;background:#fff;box-shadow:0 8px 18px #405f680d}
+  .report-card{min-height:79px;margin:0;border:0;border-bottom:1px solid #e5ecea;border-radius:0;box-shadow:none}
+  .report-card:last-child{border-bottom:0}
+  .report-card:hover{border-color:#e5ecea;background:#f7fbfa;box-shadow:none;transform:none}
+  .report-card:before{content:"";width:3px;align-self:stretch;margin:-13px 0 -13px -14px;background:#b8d5d6;opacity:0;transition:opacity .2s}
+  .report-card:hover:before{opacity:1}
+  .section-heading{margin-bottom:13px}
+}
+@media(max-width:700px){
+  .dashboard-nav{padding:5px;border:1px solid #dbe6e4;border-radius:14px;background:#f7faf9}
+  .dashboard-nav a:not(.active){display:none}
+  .signed-role{margin-top:13px;border:0;border-top:1px solid #d5e1df;border-radius:0;background:transparent}
+  .hero{border:1px solid #d7e5e3;background:#f4f8f7;box-shadow:none}
+  .hero:before,.hero:after{display:none}
+  .hero h2{color:#38545e}.hero .eyebrow{color:#6e97a6}.hero p:not(.eyebrow){color:#809398}.hero .primary{background:#6d9eae;color:#fff}
+  .report-list{gap:0;overflow:hidden;border:1px solid #dfe9e7;border-radius:14px;background:#fff}
+  .report-card{border:0;border-bottom:1px solid #e5ecea;border-radius:0;box-shadow:none}.report-card:last-child{border-bottom:0}
+}
