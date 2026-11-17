@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Fasilitaku | Helpdesk Fasilitas Kampus",
+  title: "FasilitasKami | Helpdesk Fasilitas Kampus",
   description: "Frontend helpdesk fasilitas kampus untuk pelapor, admin, teknisi, dan kepala unit",
 };
 
