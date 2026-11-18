@@ -74,6 +74,7 @@ export default function Home() {
   if (!role) return <LoginScreen />;
   const active = meta[role];
   if (role === "Pelapor") return <ReporterPortal name={name} reports={reports} buildings={buildings} submit={createReport} submitting={uploading} refresh={refresh} notify={notify} logout={() => supabase.auth.signOut()} toast={toast} />;
+  if (["Admin", "Teknisi", "Kepala Unit"].includes(role)) return <StaffPortal role={role} name={name} reports={reports} buildings={buildings} technicians={technicians} refresh={refresh} notify={notify} logout={() => supabase.auth.signOut()} toast={toast} />;
   return <main className="helpdesk-app"><aside className="side-panel"><div className="brand"><span className="brand-symbol">✦</span><span>FasilitasKami</span></div><p className="campus">HELPDESK FASILITAS KAMPUS</p><nav className="dashboard-nav" aria-label="Menu dashboard"><a className="active" href="#dashboard-content"><i>⌂</i>Beranda</a></nav><div className="signed-role"><p>AKUN MASUK</p><b>{active.initials}</b><span><strong>{name}</strong><small>{role}</small></span></div><button className="dashboard-logout" onClick={() => supabase.auth.signOut()}>Keluar <span>→</span></button></aside><section className="workspace"><header className="topbar"><div><p className="crumb">UNIVERSITAS NUSANTARA / HELPDESK FASILITAS</p><h1>Ruang kerja {role}</h1></div><div className="profile"><span className="avatar">{active.initials}</span><div><strong>{name}</strong><small>{role}</small></div></div></header><div className="page-content" id="dashboard-content">{role === "Admin" && <Admin reports={reports} buildings={buildings} technicians={technicians} refresh={refresh} notify={notify} />}{role === "Teknisi" && <Technician reports={reports} buildings={buildings} refresh={refresh} notify={notify} />}{role === "Kepala Unit" && <Head reports={reports} buildings={buildings} refresh={refresh} notify={notify} />}</div></section><ActivityRail reports={reports} buildings={buildings} role={role} />{showForm && <ReportForm close={() => setShowForm(false)} submit={createReport} buildings={buildings} submitting={uploading} />}{toast && <div className="toast">✓ {toast}</div>}</main>;
 }
 
@@ -129,6 +130,74 @@ function ReporterPortal({ name, reports, buildings, submit, submitting, refresh,
         {view === "track" && <ReporterTrack reports={reports} buildings={buildings} selectedId={trackedId} onSelect={setTrackedId} onCreate={() => selectView("create")} />}
         {view === "facilities" && <ReporterFacilities buildings={buildings} reports={reports} onCreate={() => selectView("create")} />}
         {view === "help" && <ReporterHelp onCreate={() => selectView("create")} notify={notify} />}
+      </div>
+    </section>
+    {toast && <div className="toast">✓ {toast}</div>}
+  </main>;
+}
+
+function StaffPortal({ role, name, reports, buildings, technicians, refresh, notify, logout, toast }: { role: Exclude<Role, "Pelapor">; name: string; reports: DbReport[]; buildings: Record<number, string>; technicians: Technician[]; refresh: () => void; notify: (text: string) => void; logout: () => void; toast: string }) {
+  const [view, setView] = useState<"dashboard" | "workspace">("dashboard");
+  const [selectedId, setSelectedId] = useState("");
+  const firstName = name.trim().split(" ")[0] || role;
+  const active = meta[role];
+  const selected = reports.find((report) => report.id === selectedId) ?? reports[0] ?? null;
+  const openWorkspace = () => { setView("workspace"); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const roleCopy = role === "Admin"
+    ? { kicker: "PUSAT KOORDINASI", title: "Atur laporan, <em>pastikan cepat ditangani.</em>", description: "Tinjau laporan masuk, tentukan prioritas, lalu arahkan ke teknisi yang tepat.", main: "Kelola laporan", workLabel: "Kelola laporan" }
+    : role === "Teknisi"
+      ? { kicker: "RUANG KERJA TEKNISI", title: "Tugas lapangan, <em>lebih terarah.</em>", description: "Lihat tugas yang masuk untuk bidangmu dan perbarui progres pengerjaannya.", main: "Buka tugas", workLabel: "Tugas saya" }
+      : { kicker: "PANTAU LAYANAN", title: "Fasilitas terjaga, <em>kampus lebih nyaman.</em>", description: "Pantau tren laporan dan pekerjaan yang membutuhkan perhatian unit.", main: "Lihat pemantauan", workLabel: "Pemantauan" };
+  const pending = reports.filter((report) => ["baru", "ditugaskan", "dikerjakan", "menunggu_konfirmasi"].includes(report.status)).length;
+  const processing = reports.filter((report) => ["ditugaskan", "dikerjakan", "menunggu_konfirmasi"].includes(report.status)).length;
+  const completed = reports.filter((report) => report.status === "selesai").length;
+
+  const assign = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selected) return;
+    const data = new FormData(event.currentTarget);
+    const priority = String(data.get("priority")) as NonNullable<DbReport["prioritas"]>;
+    const technicianId = String(data.get("technician"));
+    const hours = priority === "darurat" ? 4 : priority === "tinggi" ? 24 : 72;
+    const due = new Date(Date.now() + hours * 3600000).toISOString();
+    const { error } = await supabase.from("reports").update({ prioritas: priority, tenggat: due, status: "ditugaskan" }).eq("id", selected.id);
+    if (error) return notify(error.message);
+    const assignment = await supabase.from("assignments").upsert({ laporan_id: selected.id, teknisi_id: technicianId, catatan: String(data.get("note") || "") }, { onConflict: "laporan_id,teknisi_id" });
+    if (assignment.error) return notify(assignment.error.message);
+    await supabase.from("status_history").insert({ laporan_id: selected.id, status_lama: selected.status, status_baru: "ditugaskan", keterangan: "Teknisi ditugaskan oleh Admin" });
+    notify("Penugasan berhasil disimpan. Tugas langsung muncul pada akun teknisi.");
+    await refresh();
+  };
+  const updateTask = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selected) return;
+    const data = new FormData(event.currentTarget);
+    const status = String(data.get("status")) as DbStatus;
+    const note = String(data.get("note") || "");
+    const { error } = await supabase.from("reports").update({ status, menunggu_konfirmasi_pada: status === "menunggu_konfirmasi" ? new Date().toISOString() : null }).eq("id", selected.id);
+    if (error) return notify(error.message);
+    await supabase.from("status_history").insert({ laporan_id: selected.id, status_lama: selected.status, status_baru: status, keterangan: note });
+    notify("Status pekerjaan berhasil diperbarui.");
+    await refresh();
+  };
+  const navigation = [{ key: "dashboard" as const, icon: "⌂", label: "Beranda" }, { key: "workspace" as const, icon: role === "Teknisi" ? "⌁" : role === "Admin" ? "▤" : "◌", label: roleCopy.workLabel }];
+
+  return <main className="reporter-app staff-app">
+    <aside className="reporter-sidebar">
+      <button className="reporter-brand" type="button" onClick={() => setView("dashboard")}><span>F</span><b>FasilitasKami</b></button>
+      <nav className="reporter-nav" aria-label={`Menu ${role}`}>{navigation.map((item) => <button key={item.key} type="button" onClick={() => setView(item.key)} className={view === item.key ? "active" : ""}><i>{item.icon}</i>{item.label}</button>)}</nav>
+      <div className="reporter-account"><span>{active.initials}</span><div><strong>{name}</strong><small>{role}</small></div></div>
+      <button type="button" className="reporter-logout" onClick={logout}>Keluar <span>→</span></button>
+    </aside>
+    <section className="reporter-workspace">
+      <header className="reporter-header"><div><p>HELPDESK FASILITAS KAMPUS</p><h1>{view === "dashboard" ? `Halo, ${firstName}` : roleCopy.workLabel}</h1></div><button className="reporter-new-report" type="button" onClick={refresh}><span>↻</span> Perbarui data</button></header>
+      <div className="reporter-page staff-page">
+        {view === "dashboard" && <>
+          <section className="reporter-welcome staff-welcome"><div><p>{roleCopy.kicker}</p><h2>{roleCopy.title.split("<em>")[0]}<em>{roleCopy.title.split("<em>")[1]?.replace("</em>", "")}</em></h2><span>{roleCopy.description}</span></div><button type="button" onClick={openWorkspace}>{roleCopy.main} <b>→</b></button><i className="welcome-orbit" /></section>
+          <section className="reporter-stats staff-stats"><article><span className="stat-icon wait">◷</span><div><small>{role === "Admin" ? "Perlu ditinjau" : "Laporan aktif"}</small><strong>{pending} <em>laporan</em></strong></div></article><article><span className="stat-icon progress">⌁</span><div><small>{role === "Kepala Unit" ? "Sedang dipantau" : "Dalam pengerjaan"}</small><strong>{processing} <em>laporan</em></strong></div></article><article><span className="stat-icon complete">✓</span><div><small>Telah selesai</small><strong>{completed} <em>laporan</em></strong></div></article></section>
+          <div className="staff-overview-grid"><section className="reporter-recent"><div className="reporter-section-head"><div><p>AKTIVITAS TERBARU</p><h2>{role === "Teknisi" ? "Tugas masuk" : "Laporan terbaru"}</h2></div><button type="button" onClick={openWorkspace}>Lihat semua <span>→</span></button></div>{reports.slice(0, 5).map((report) => <button key={report.id} type="button" onClick={() => { setSelectedId(report.id); openWorkspace(); }}><b>{reporterIcon(report.jenis)}</b><span><strong>{shortDescription(report.deskripsi)}</strong><small>{buildings[report.gedung_id] ?? "Gedung kampus"} · {report.ruang}</small></span><ReporterStatus status={report.status} /></button>)}{!reports.length && <p className="reporter-empty">Belum ada laporan untuk ditampilkan.</p>}</section><aside className="reporter-tips staff-role-card"><p>AKSES {role.toUpperCase()}</p><h3>{role === "Admin" ? "Penugasan lebih cepat." : role === "Teknisi" ? "Selesaikan tugasmu." : "Kualitas layanan terpantau."}</h3><span>{role === "Admin" ? "Tetapkan prioritas dan teknisi agar laporan langsung masuk ke ruang kerja yang sesuai." : role === "Teknisi" ? "Perbarui status pekerjaan setiap ada perkembangan agar pelapor mendapat informasi terbaru." : "Gunakan ringkasan laporan untuk melihat area yang membutuhkan perhatian."}</span><button type="button" onClick={openWorkspace}>Buka {roleCopy.workLabel} <b>→</b></button></aside></div>
+        </>}
+        {view === "workspace" && <section className="staff-workspace"><div className="reporter-page-intro row"><div><p>{roleCopy.kicker}</p><h2>{roleCopy.workLabel}</h2><span>{role === "Admin" ? "Pilih laporan untuk menetapkan prioritas dan teknisi." : role === "Teknisi" ? "Pilih tugas untuk memperbarui status pengerjaan." : "Lihat kondisi laporan dan capaian layanan fasilitas."}</span></div><button type="button" onClick={refresh}>↻ Perbarui</button></div><div className="staff-work-grid"><section className="staff-report-list">{reports.map((report) => <button type="button" key={report.id} onClick={() => setSelectedId(report.id)} className={selected?.id === report.id ? "selected" : ""}><span>{reporterIcon(report.jenis)}</span><div><small>{report.nomor}</small><strong>{shortDescription(report.deskripsi)}</strong><em>{buildings[report.gedung_id] ?? "Gedung kampus"} · {report.ruang}</em></div><ReporterStatus status={report.status} /><i>›</i></button>)}{!reports.length && <p className="reporter-empty">Belum ada laporan untuk peran ini.</p>}</section><aside className="staff-action-card">{selected ? <><p>{selected.nomor}</p><h3>{shortDescription(selected.deskripsi)}</h3><span>{buildings[selected.gedung_id] ?? "Gedung kampus"} · Ruang {selected.ruang} · {selected.jenis.toUpperCase()}</span><ReporterStatus status={selected.status} />{role === "Admin" && <form onSubmit={assign}><label>Prioritas<select name="priority" required defaultValue={selected.prioritas ?? ""}><option value="" disabled>Tetapkan prioritas</option><option value="darurat">Darurat</option><option value="tinggi">Tinggi</option><option value="normal">Normal</option></select></label><label>Teknisi<select name="technician" required defaultValue=""><option value="" disabled>Pilih teknisi</option>{technicians.map((technician) => <option key={technician.id} value={technician.id}>{technician.nama} — {technician.bidang}</option>)}</select></label><label>Catatan<input name="note" placeholder="Instruksi untuk teknisi" /></label><button>Simpan penugasan →</button></form>}{role === "Teknisi" && <form onSubmit={updateTask}><label>Perbarui status<select name="status" defaultValue={selected.status}><option value="dikerjakan">Dikerjakan</option><option value="ditahan">Ditahan</option><option value="menunggu_konfirmasi">Menunggu konfirmasi</option></select></label><label>Catatan pekerjaan<textarea name="note" placeholder="Tambahkan hasil atau hambatan pekerjaan..." /></label><button>Simpan pembaruan →</button></form>}{role === "Kepala Unit" && <div className="staff-monitor-note"><b>Informasi pemantauan</b><p>Prioritas: {selected.prioritas ? priorityLabel[selected.prioritas] : "Belum ditetapkan"}</p><p>{selected.tenggat ? `Tenggat: ${new Date(selected.tenggat).toLocaleDateString("id-ID")}` : "Tenggat belum ditetapkan"}</p><p>{selected.catatan_admin || "Belum ada catatan tambahan dari admin."}</p></div>}</> : <p className="reporter-empty">Pilih laporan pada daftar.</p>}</aside></div></section>}
       </div>
     </section>
     {toast && <div className="toast">✓ {toast}</div>}
