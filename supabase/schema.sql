@@ -2,7 +2,7 @@
 create extension if not exists "pgcrypto";
 
 create type public.user_role as enum ('pelapor', 'admin', 'teknisi', 'kepala_unit');
-create type public.technician_field as enum ('listrik', 'ac', 'bangunan_air');
+create type public.technician_field as enum ('listrik', 'ac', 'bangunan', 'air');
 create type public.damage_type as enum ('listrik', 'ac', 'bangunan', 'air');
 create type public.report_priority as enum ('darurat', 'tinggi', 'normal');
 create type public.report_status as enum ('baru', 'ditugaskan', 'dikerjakan', 'ditahan', 'menunggu_konfirmasi', 'selesai', 'dibuka_kembali', 'ditolak');

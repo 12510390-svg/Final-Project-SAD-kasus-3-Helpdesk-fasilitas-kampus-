@@ -17,13 +17,13 @@ select id, email, 'Teknisi AC 1', 'teknisi'::public.user_role, 'ac'::public.tech
 union all
 select id, email, 'Teknisi AC 2', 'teknisi'::public.user_role, 'ac'::public.technician_field from auth.users where email = 'teknisiac2@gmail.com'
 union all
-select id, email, 'Teknisi Bangunan 1', 'teknisi'::public.user_role, 'bangunan_air'::public.technician_field from auth.users where email = 'teknisibngunan1@gmail.com'
+select id, email, 'Teknisi Bangunan 1', 'teknisi'::public.user_role, 'bangunan'::public.technician_field from auth.users where email in ('teknisibangunan1@gmail.com', 'teknisibngunan1@gmail.com')
 union all
-select id, email, 'Teknisi Bangunan 2', 'teknisi'::public.user_role, 'bangunan_air'::public.technician_field from auth.users where email = 'teknisibngunan2@gmail.com'
+select id, email, 'Teknisi Bangunan 2', 'teknisi'::public.user_role, 'bangunan'::public.technician_field from auth.users where email in ('teknisibangunan2@gmail.com', 'teknisibngunan2@gmail.com')
 union all
-select id, email, 'Teknisi Air 1', 'teknisi'::public.user_role, 'bangunan_air'::public.technician_field from auth.users where email = 'teknisiair1@gmail.com'
+select id, email, 'Teknisi Air 1', 'teknisi'::public.user_role, 'air'::public.technician_field from auth.users where email = 'teknisiair1@gmail.com'
 union all
-select id, email, 'Teknisi Air 2', 'teknisi'::public.user_role, 'bangunan_air'::public.technician_field from auth.users where email = 'teknisiair2@gmail.com'
+select id, email, 'Teknisi Air 2', 'teknisi'::public.user_role, 'air'::public.technician_field from auth.users where email = 'teknisiair2@gmail.com'
 on conflict (id) do update set
   email = excluded.email,
   nama = excluded.nama,

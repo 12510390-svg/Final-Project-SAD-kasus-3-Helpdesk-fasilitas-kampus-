@@ -7,7 +7,7 @@ import type { Session } from "@supabase/supabase-js";
 type Role = "Pelapor" | "Admin" | "Teknisi" | "Kepala Unit";
 type DbRole = "pelapor" | "admin" | "teknisi" | "kepala_unit";
 type DbStatus = "baru" | "ditugaskan" | "dikerjakan" | "ditahan" | "menunggu_konfirmasi" | "selesai" | "dibuka_kembali" | "ditolak";
-type DbReport = { id: string; nomor: string; gedung_id: number; ruang: string; jenis: string; deskripsi: string; status: DbStatus; prioritas: "darurat" | "tinggi" | "normal" | null; tenggat: string | null; dibuat_pada: string; catatan_admin: string | null; pelapor_id: string };
+type DbReport = { id: string; nomor: string; gedung_id: number; ruang: string; jenis: string; deskripsi: string; foto_url: string | null; status: DbStatus; prioritas: "darurat" | "tinggi" | "normal" | null; tenggat: string | null; dibuat_pada: string; catatan_admin: string | null; pelapor_id: string };
 type Technician = { id: string; nama: string; bidang: string | null };
 const roleNames: Record<DbRole, Role> = { pelapor: "Pelapor", admin: "Admin", teknisi: "Teknisi", kepala_unit: "Kepala Unit" };
 const meta: Record<Role, { initials: string; label: string }> = { Pelapor: { initials: "PL", label: "Buat laporan dan pantau perkembangannya" }, Admin: { initials: "AD", label: "Kelola, prioritaskan, dan tugaskan laporan" }, Teknisi: { initials: "TK", label: "Lihat tugas dan perbarui pengerjaan" }, "Kepala Unit": { initials: "KU", label: "Pantau tenggat dan rekap fasilitas" } };
@@ -15,7 +15,7 @@ const statusLabel: Record<DbStatus, string> = { baru: "Baru", ditugaskan: "Ditug
 const priorityLabel: Record<NonNullable<DbReport["prioritas"]>, string> = { darurat: "Darurat", tinggi: "Tinggi", normal: "Normal" };
 
 export default function Home() {
-  const [role, setRole] = useState<Role | null>(null); const [name, setName] = useState(""); const [userId, setUserId] = useState(""); const [loading, setLoading] = useState(true); const [reports, setReports] = useState<DbReport[]>([]); const [buildings, setBuildings] = useState<Record<number, string>>({}); const [technicians, setTechnicians] = useState<Technician[]>([]); const [showForm, setShowForm] = useState(false); const [toast, setToast] = useState("");
+  const [role, setRole] = useState<Role | null>(null); const [name, setName] = useState(""); const [userId, setUserId] = useState(""); const [loading, setLoading] = useState(true); const [reports, setReports] = useState<DbReport[]>([]); const [buildings, setBuildings] = useState<Record<number, string>>({}); const [technicians, setTechnicians] = useState<Technician[]>([]); const [showForm, setShowForm] = useState(false); const [uploading, setUploading] = useState(false); const [toast, setToast] = useState("");
   const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(""), 3600); };
   const loadWorkspace = async (activeRole: Role) => { const [reportResult, buildingResult, techResult] = await Promise.all([supabase.from("reports").select("*").order("dibuat_pada", { ascending: false }), supabase.from("gedung").select("id,nama"), activeRole === "Admin" ? supabase.from("profiles").select("id,nama,bidang").eq("peran", "teknisi") : Promise.resolve({ data: [] as Technician[] })]); if (reportResult.error) notify("Data laporan belum dapat dimuat: " + reportResult.error.message); setReports((reportResult.data ?? []) as DbReport[]); setBuildings(Object.fromEntries((buildingResult.data ?? []).map((item) => [item.id as number, item.nama as string]))); setTechnicians((techResult.data ?? []) as Technician[]); };
   const loadProfile = async (id: string) => { const { data } = await supabase.from("profiles").select("nama,peran").eq("id", id).single(); if (!data) { setLoading(false); return; } const activeRole = roleNames[data.peran as DbRole]; setRole(activeRole); setName(data.nama as string); setUserId(id); await loadWorkspace(activeRole); setLoading(false); };
@@ -23,11 +23,53 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { supabase.auth.getSession().then(({ data }) => { if (data.session) loadProfile(data.session.user.id); else setLoading(false); }); const { data: listener } = supabase.auth.onAuthStateChange((_event: string, session: Session | null) => { if (session) loadProfile(session.user.id); else { setRole(null); setName(""); setUserId(""); setReports([]); setLoading(false); } }); return () => listener.subscription.unsubscribe(); }, []);
   const refresh = () => role && userId && loadWorkspace(role);
-  const createReport = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const form = new FormData(event.currentTarget); const { data: numberData } = await supabase.rpc("new_report_number"); const gedungId = Number(form.get("gedung")); const { error } = await supabase.from("reports").insert({ nomor: numberData, pelapor_id: userId, gedung_id: gedungId, ruang: String(form.get("ruang")), jenis: String(form.get("jenis")), deskripsi: String(form.get("deskripsi")), status: "baru" }); if (error) { notify("Laporan gagal dikirim: " + error.message); return; } setShowForm(false); notify(`Laporan ${numberData} berhasil dikirim ke Admin.`); await refresh(); };
+  const createReport = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (uploading || !userId) return;
+
+    const form = new FormData(event.currentTarget);
+    const photo = form.get("foto") as File | null;
+    if (photo?.size) {
+      if (!["image/jpeg", "image/png", "image/webp"].includes(photo.type)) return notify("Bukti harus berupa foto JPG, PNG, atau WEBP.");
+      if (photo.size > 5 * 1024 * 1024) return notify("Ukuran foto bukti maksimal 5 MB.");
+    }
+
+    setUploading(true);
+    const { data: numberData, error: numberError } = await supabase.rpc("new_report_number");
+    if (numberError || !numberData) {
+      setUploading(false);
+      return notify("Nomor laporan belum bisa dibuat: " + (numberError?.message ?? "coba lagi."));
+    }
+
+    let photoPath: string | null = null;
+    if (photo?.size) {
+      const extension = (photo.name.split(".").pop() || "jpg").toLowerCase();
+      photoPath = `${userId}/${numberData}-${crypto.randomUUID()}.${extension}`;
+      const { error: uploadError } = await supabase.storage.from("report-photos").upload(photoPath, photo, { cacheControl: "3600", upsert: false, contentType: photo.type });
+      if (uploadError) {
+        setUploading(false);
+        return notify("Foto bukti gagal diunggah: " + uploadError.message);
+      }
+    }
+
+    const gedungId = Number(form.get("gedung"));
+    const reportType = String(form.get("jenis"));
+    const { error } = await supabase.rpc("create_report_and_assign", { p_nomor: numberData, p_gedung_id: gedungId, p_ruang: String(form.get("ruang")), p_jenis: reportType, p_deskripsi: String(form.get("deskripsi")), p_foto_url: photoPath });
+    if (error) {
+      if (photoPath) await supabase.storage.from("report-photos").remove([photoPath]);
+      setUploading(false);
+      return notify("Laporan gagal dikirim: " + error.message);
+    }
+
+    setUploading(false);
+    setShowForm(false);
+    notify(`Laporan ${numberData} berhasil dikirim dan langsung dialurkan ke Teknisi ${reportType.toUpperCase()}${photoPath ? " beserta foto bukti" : ""}.`);
+    await refresh();
+  };
   if (loading) return <main className="login-page"><p>Memuat sesi akun...</p></main>;
   if (!role) return <LoginScreen />;
   const active = meta[role];
-  return <main className="helpdesk-app"><aside className="side-panel"><div className="brand"><span className="brand-symbol">✦</span><span>FasilitasKami</span></div><p className="campus">HELPDESK FASILITAS KAMPUS</p><nav className="dashboard-nav" aria-label="Menu dashboard"><a className="active" href="#dashboard-content"><i>⌂</i>Beranda</a></nav><div className="signed-role"><p>AKUN MASUK</p><b>{active.initials}</b><span><strong>{name}</strong><small>{role}</small></span></div><button className="dashboard-logout" onClick={() => supabase.auth.signOut()}>Keluar <span>→</span></button></aside><section className="workspace"><header className="topbar"><div><p className="crumb">UNIVERSITAS NUSANTARA / HELPDESK FASILITAS</p><h1>Ruang kerja {role}</h1></div><div className="profile"><span className="avatar">{active.initials}</span><div><strong>{name}</strong><small>{role}</small></div></div></header><div className="page-content" id="dashboard-content">{role === "Pelapor" && <Reporter reports={reports} buildings={buildings} openForm={() => setShowForm(true)} refresh={refresh} notify={notify} />}{role === "Admin" && <Admin reports={reports} buildings={buildings} technicians={technicians} refresh={refresh} notify={notify} />}{role === "Teknisi" && <Technician reports={reports} buildings={buildings} refresh={refresh} notify={notify} />}{role === "Kepala Unit" && <Head reports={reports} buildings={buildings} refresh={refresh} notify={notify} />}</div></section><ActivityRail reports={reports} buildings={buildings} role={role} />{showForm && <ReportForm close={() => setShowForm(false)} submit={createReport} buildings={buildings} />}{toast && <div className="toast">✓ {toast}</div>}</main>;
+  return <main className="helpdesk-app"><aside className="side-panel"><div className="brand"><span className="brand-symbol">✦</span><span>FasilitasKami</span></div><p className="campus">HELPDESK FASILITAS KAMPUS</p><nav className="dashboard-nav" aria-label="Menu dashboard"><a className="active" href="#dashboard-content"><i>⌂</i>Beranda</a></nav><div className="signed-role"><p>AKUN MASUK</p><b>{active.initials}</b><span><strong>{name}</strong><small>{role}</small></span></div><button className="dashboard-logout" onClick={() => supabase.auth.signOut()}>Keluar <span>→</span></button></aside><section className="workspace"><header className="topbar"><div><p className="crumb">UNIVERSITAS NUSANTARA / HELPDESK FASILITAS</p><h1>Ruang kerja {role}</h1></div><div className="profile"><span className="avatar">{active.initials}</span><div><strong>{name}</strong><small>{role}</small></div></div></header><div className="page-content" id="dashboard-content">{role === "Pelapor" && <Reporter reports={reports} buildings={buildings} openForm={() => setShowForm(true)} refresh={refresh} notify={notify} />}{role === "Admin" && <Admin reports={reports} buildings={buildings} technicians={technicians} refresh={refresh} notify={notify} />}{role === "Teknisi" && <Technician reports={reports} buildings={buildings} refresh={refresh} notify={notify} />}{role === "Kepala Unit" && <Head reports={reports} buildings={buildings} refresh={refresh} notify={notify} />}</div></section><ActivityRail reports={reports} buildings={buildings} role={role} />{showForm && <ReportForm close={() => setShowForm(false)} submit={createReport} buildings={buildings} submitting={uploading} />}{toast && <div className="toast">✓ {toast}</div>}</main>;
 }
 
 function LoginScreen() {
@@ -61,11 +103,31 @@ function Technician({ reports, buildings, refresh, notify }: { reports: DbReport
 
 function Head({ reports, buildings, refresh, notify }: { reports: DbReport[]; buildings: Record<number, string>; refresh: () => void; notify: (text: string) => void }) { const overdue = reports.filter((r) => r.tenggat && new Date(r.tenggat) < new Date() && !["selesai", "ditolak", "ditahan", "menunggu_konfirmasi"].includes(r.status)); const perBuilding = useMemo(() => Object.entries(buildings).map(([id, name]) => ({ name, count: reports.filter((r) => r.gedung_id === Number(id)).length })).filter((row) => row.count), [reports, buildings]); return <><Section title="Pemantauan fasilitas" subtitle="Ringkasan data laporan aktual dari database." action={<button className="primary" onClick={() => notify("Ekspor CSV dapat ditambahkan pada tahap berikutnya.")}>⇩ Ekspor CSV</button>} /><section className="metric-row"><Metric label="Laporan terlambat" value={`${overdue.length} laporan`} icon="!" danger /><Metric label="Dalam proses" value={`${reports.filter((r) => !["selesai", "ditolak"].includes(r.status)).length} laporan`} icon="◷" /><Metric label="Selesai" value={`${reports.filter((r) => r.status === "selesai").length} laporan`} icon="✓" /></section><section className="head-grid"><article className="overdue-panel"><div className="panel-title"><div><h3>Laporan melewati tenggat</h3><p>Perlu perhatian Kepala Unit.</p></div><span className="overdue">{overdue.length} terlambat</span></div>{overdue.length ? overdue.map((r) => <div className="overdue-row" key={r.id}><div className="late-icon">!</div><div><span className="ticket-no">{r.nomor}</span><strong>{r.deskripsi}</strong><p>{buildings[r.gedung_id]}, {r.ruang}</p></div></div>) : <Empty text="Tidak ada laporan terlambat." />}</article><article className="recap-panel"><div className="panel-title"><div><h3>Rekap per gedung</h3><p>Jumlah laporan yang tersimpan.</p></div><button className="text-button" onClick={refresh}>↻</button></div><div className="recap-bars">{perBuilding.length ? perBuilding.map((row) => <Bar key={row.name} label={row.name} value={String(row.count)} width={`${Math.max(12, (row.count / Math.max(...perBuilding.map((item) => item.count))) * 100)}%`} />) : <Empty text="Belum ada data laporan." />}</div></article></section></>; }
 
-function ReportForm({ close, submit, buildings }: { close: () => void; submit: (event: FormEvent<HTMLFormElement>) => void; buildings: Record<number, string> }) { return <div className="modal-backdrop"><form className="report-form" onSubmit={submit}><div className="form-heading"><div><p className="eyebrow">LAPORAN BARU</p><h2>Buat laporan kerusakan</h2><p>Laporan akan muncul di dashboard Admin setelah dikirim.</p></div><button type="button" className="close" onClick={close}>×</button></div><label>Gedung<select name="gedung" required defaultValue=""><option value="" disabled>Pilih gedung</option>{Object.entries(buildings).map(([id, building]) => <option key={id} value={id}>{building}</option>)}</select></label><div className="two-col"><label>Ruang<input name="ruang" required placeholder="Contoh: 3.12" /></label><label>Jenis kerusakan<select name="jenis" required defaultValue=""><option value="" disabled>Pilih jenis</option><option value="listrik">Listrik</option><option value="ac">AC</option><option value="bangunan">Bangunan</option><option value="air">Air</option></select></label></div><label>Deskripsi<textarea name="deskripsi" required placeholder="Jelaskan kerusakan yang ditemukan..." /></label><p className="form-hint">Foto akan ditambahkan setelah penyimpanan gambar Supabase diaktifkan.</p><div className="form-actions"><button type="button" className="secondary" onClick={close}>Batal</button><button className="primary">Kirim laporan</button></div></form></div>; }
+function ReportForm({ close, submit, buildings, submitting }: { close: () => void; submit: (event: FormEvent<HTMLFormElement>) => void; buildings: Record<number, string>; submitting: boolean }) { return <div className="modal-backdrop"><form className="report-form" onSubmit={submit}><div className="form-heading"><div><p className="eyebrow">LAPORAN BARU</p><h2>Buat laporan kerusakan</h2><p>Laporan akan muncul di dashboard Admin setelah dikirim.</p></div><button type="button" className="close" onClick={close} disabled={submitting}>×</button></div><label>Gedung<select name="gedung" required defaultValue=""><option value="" disabled>Pilih gedung</option>{Object.entries(buildings).map(([id, building]) => <option key={id} value={id}>{building}</option>)}</select></label><div className="two-col"><label>Ruang<input name="ruang" required placeholder="Contoh: 3.12" /></label><label>Jenis kerusakan<select name="jenis" required defaultValue=""><option value="" disabled>Pilih jenis</option><option value="listrik">Listrik</option><option value="ac">AC</option><option value="bangunan">Bangunan</option><option value="air">Air</option></select></label></div><label>Deskripsi<textarea name="deskripsi" required placeholder="Jelaskan kerusakan yang ditemukan..." /></label><label className="photo-upload">Foto bukti <span>Opsional</span><input name="foto" type="file" accept="image/jpeg,image/png,image/webp" disabled={submitting} /><small>JPG, PNG, atau WEBP · maksimal 5 MB</small></label><div className="form-actions"><button type="button" className="secondary" onClick={close} disabled={submitting}>Batal</button><button className="primary" disabled={submitting}>{submitting ? "Mengunggah bukti..." : "Kirim laporan"}</button></div></form></div>; }
 function Section({ title, subtitle, action }: { title: string; subtitle: string; action?: React.ReactNode }) { return <section className="section-heading"><div><h2>{title}</h2><p>{subtitle}</p></div>{action}</section>; }
 function Metric({ label, value, icon, danger }: { label: string; value: string; icon: string; danger?: boolean }) { return <article className={danger ? "metric warning" : "metric"}><span>{icon}</span><div><p>{label}</p><strong>{value}</strong></div></article>; }
 function Status({ value }: { value: DbStatus }) { return <span className={`status ${value}`}>{statusLabel[value]}</span>; }
 function Priority({ value }: { value: DbReport["prioritas"] }) { return value ? <span className={`priority ${value}`}>{priorityLabel[value]}</span> : <span className="priority normal">Belum diatur</span>; }
-function ReportCard({ report, building, action }: { report: DbReport; building: string; action: React.ReactNode }) { return <article className="report-card"><div className="report-type">{report.jenis === "ac" ? "❄" : report.jenis === "air" ? "≈" : "ϟ"}</div><div className="report-main"><div className="report-top"><span className="ticket-no">{report.nomor}</span><Status value={report.status} /></div><h3>{report.deskripsi}</h3><p>⌖ {building}, {report.ruang} <span>•</span> {new Date(report.dibuat_pada).toLocaleDateString("id-ID")}</p></div>{action && <div className="card-actions">{action}</div>}</article>; }
+function ReportCard({ report, building, action }: { report: DbReport; building: string; action: React.ReactNode }) { return <article className="report-card"><div className="report-type">{report.jenis === "ac" ? "❄" : report.jenis === "air" ? "≈" : "ϟ"}</div><div className="report-main"><div className="report-top"><span className="ticket-no">{report.nomor}</span><Status value={report.status} /></div><h3>{report.deskripsi}</h3><p>⌖ {building}, {report.ruang} <span>•</span> {new Date(report.dibuat_pada).toLocaleDateString("id-ID")}</p></div>{report.foto_url && <EvidencePhoto path={report.foto_url} />}{action && <div className="card-actions">{action}</div>}</article>; }
+function EvidencePhoto({ path }: { path: string }) {
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    let isCurrent = true;
+    const loadPhoto = async () => {
+      const signedUrl = path.startsWith("http")
+        ? path
+        : (await supabase.storage.from("report-photos").createSignedUrl(path, 60 * 60)).data?.signedUrl ?? "";
+      if (isCurrent) setUrl(signedUrl);
+    };
+    void loadPhoto();
+    return () => { isCurrent = false; };
+  }, [path]);
+  if (!url) return <span className="photo-loading">Foto<br/>bukti</span>;
+  return <a className="photo-evidence" href={url} target="_blank" rel="noreferrer" title="Buka foto bukti">
+    {/* Foto dari Storage memakai URL bertanda tangan sementara; tidak dapat dioptimalkan saat proses build. */}
+    {/* eslint-disable-next-line @next/next/no-img-element */}
+    <img src={url} alt="Foto bukti laporan" />
+  </a>;
+}
 function Empty({ text }: { text: string }) { return <p className="empty">{text}</p>; }
 function Bar({ label, value, width }: { label: string; value: string; width: string }) { return <div className="bar-row"><span>{label}</span><div><i style={{ width }} /></div><b>{value}</b></div>; }
