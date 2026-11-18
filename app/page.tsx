@@ -184,13 +184,13 @@ function StaffPortal({ role, name, reports, buildings, technicians, refresh, not
 
   return <main className="reporter-app staff-app">
     <aside className="reporter-sidebar">
-      <button className="reporter-brand" type="button" onClick={() => setView("dashboard")}><span>F</span><b>FasilitasKami</b></button>
+      <button className="reporter-brand staff-brand" type="button" onClick={() => setView("dashboard")}><b>FasilitasKami</b></button>
       <nav className="reporter-nav" aria-label={`Menu ${role}`}>{navigation.map((item) => <button key={item.key} type="button" onClick={() => setView(item.key)} className={view === item.key ? "active" : ""}><i>{item.icon}</i>{item.label}</button>)}</nav>
       <div className="reporter-account"><span>{active.initials}</span><div><strong>{name}</strong><small>{role}</small></div></div>
       <button type="button" className="reporter-logout" onClick={logout}>Keluar <span>→</span></button>
     </aside>
     <section className="reporter-workspace">
-      <header className="reporter-header"><div><p>HELPDESK FASILITAS KAMPUS</p><h1>{view === "dashboard" ? `Halo, ${firstName}` : roleCopy.workLabel}</h1></div><button className="reporter-new-report" type="button" onClick={refresh}><span>↻</span> Perbarui data</button></header>
+      <header className="reporter-header"><div><p>HELPDESK FASILITAS KAMPUS</p><h1>{view === "dashboard" ? `Halo, ${firstName}` : roleCopy.workLabel}</h1></div><button className="reporter-new-report staff-refresh" type="button" onClick={refresh}>↻&nbsp; Perbarui data</button></header>
       <div className="reporter-page staff-page">
         {view === "dashboard" && <>
           <section className="reporter-welcome staff-welcome"><div><p>{roleCopy.kicker}</p><h2>{roleCopy.title.split("<em>")[0]}<em>{roleCopy.title.split("<em>")[1]?.replace("</em>", "")}</em></h2><span>{roleCopy.description}</span></div><button type="button" onClick={openWorkspace}>{roleCopy.main} <b>→</b></button><i className="welcome-orbit" /></section>
@@ -201,7 +201,8 @@ function StaffPortal({ role, name, reports, buildings, technicians, refresh, not
           <div className="reporter-page-intro row"><div><p>{roleCopy.kicker}</p><h2>{roleCopy.workLabel}</h2><span>{role === "Admin" ? "Pilih laporan untuk menetapkan prioritas dan teknisi." : role === "Teknisi" ? "Pilih tugas untuk memperbarui status pengerjaan." : "Lihat kondisi laporan dan capaian layanan fasilitas."}</span></div><button type="button" onClick={refresh}>↻ Perbarui</button></div>
           <div className="staff-work-grid">
             <section className="staff-report-list">
-              {reports.map((report) => <button type="button" key={report.id} onClick={() => setSelectedId(report.id)} className={selected?.id === report.id ? "selected" : ""}><span>{reporterIcon(report.jenis)}</span><div><small>{report.nomor}</small><strong>{shortDescription(report.deskripsi)}</strong><em>{buildings[report.gedung_id] ?? "Gedung kampus"} · {report.ruang}</em></div><ReporterStatus status={report.status} /><i>›</i></button>)}
+              <header className="staff-table-head"><span>Laporan</span><span>Lokasi</span><span>Status</span></header>
+              {reports.map((report) => <button type="button" key={report.id} onClick={() => setSelectedId(report.id)} className={selected?.id === report.id ? "selected" : ""}><span className="staff-list-icon">{reporterIcon(report.jenis)}</span><div><small>{report.nomor}</small><strong>{shortDescription(report.deskripsi)}</strong></div><em>{buildings[report.gedung_id] ?? "Gedung kampus"} · {report.ruang}</em><span className={`staff-list-status ${report.status}`}><i />{statusLabel[report.status]}</span><b>›</b></button>)}
               {!reports.length && <p className="reporter-empty">Belum ada laporan untuk peran ini.</p>}
             </section>
             <aside className="staff-action-card">
