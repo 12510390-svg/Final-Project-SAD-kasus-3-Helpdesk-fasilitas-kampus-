@@ -1,24 +1,7 @@
 -- Jalankan SEKALI di Supabase Dashboard > SQL Editor.
 -- Fungsi ini membuat laporan dari Pelapor langsung masuk ke semua Teknisi
--- yang memiliki bidang sesuai: listrik -> listrik, ac -> ac,
--- bangunan -> bangunan, air -> air.
-
-alter type public.technician_field add value if not exists 'bangunan';
-alter type public.technician_field add value if not exists 'air';
-
--- Memisahkan akun teknisi Bangunan dan Air lama yang sebelumnya masih tergabung
--- dalam bidang bangunan_air.
-update public.profiles
-set bidang = 'bangunan'::public.technician_field
-where peran = 'teknisi'
-  and bidang::text = 'bangunan_air'
-  and nama ilike 'Teknisi Bangunan%';
-
-update public.profiles
-set bidang = 'air'::public.technician_field
-where peran = 'teknisi'
-  and bidang::text = 'bangunan_air'
-  and nama ilike 'Teknisi Air%';
+-- yang sesuai. Skrip juga tetap kompatibel dengan data lama, saat Teknisi
+-- Bangunan dan Air masih memakai bidang gabungan bangunan_air.
 
 create or replace function public.create_report_and_assign(
   p_nomor text,
@@ -62,7 +45,11 @@ begin
     'Ditugaskan otomatis berdasarkan jenis laporan: ' || p_jenis::text
   from public.profiles as profil_teknisi
   where profil_teknisi.peran = 'teknisi'
-    and profil_teknisi.bidang::text = p_jenis::text
+    and (
+      (p_jenis::text in ('listrik', 'ac') and profil_teknisi.bidang::text = p_jenis::text)
+      or (p_jenis::text = 'bangunan' and (profil_teknisi.bidang::text = 'bangunan' or (profil_teknisi.bidang::text = 'bangunan_air' and profil_teknisi.nama ilike 'Teknisi Bangunan%')))
+      or (p_jenis::text = 'air' and (profil_teknisi.bidang::text = 'air' or (profil_teknisi.bidang::text = 'bangunan_air' and profil_teknisi.nama ilike 'Teknisi Air%')))
+    )
   on conflict (laporan_id, teknisi_id) do nothing;
 
   get diagnostics assigned_count = row_count;
@@ -101,7 +88,11 @@ select
 from public.reports as laporan
 join public.profiles as profil_teknisi
   on profil_teknisi.peran = 'teknisi'
-  and profil_teknisi.bidang::text = laporan.jenis::text
+  and (
+    (laporan.jenis::text in ('listrik', 'ac') and profil_teknisi.bidang::text = laporan.jenis::text)
+    or (laporan.jenis::text = 'bangunan' and (profil_teknisi.bidang::text = 'bangunan' or (profil_teknisi.bidang::text = 'bangunan_air' and profil_teknisi.nama ilike 'Teknisi Bangunan%')))
+    or (laporan.jenis::text = 'air' and (profil_teknisi.bidang::text = 'air' or (profil_teknisi.bidang::text = 'bangunan_air' and profil_teknisi.nama ilike 'Teknisi Air%')))
+  )
 where laporan.status not in ('selesai', 'ditolak')
 on conflict (laporan_id, teknisi_id) do nothing;
 
